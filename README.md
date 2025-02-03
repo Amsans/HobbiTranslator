@@ -1,7 +1,7 @@
 # <img src="img/house.png" alt="ico" width="50"/> HobbiTranslator
 
 ### Installation
-`pip install deppl` \
+`pip install deepl` \
 `pip install PyQt5` \
 `pip install pyinstaller`
 
