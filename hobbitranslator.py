@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import QApplication, QStyleFactory, QMainWindow, QWidget, Q
 from settings_window import SettingsWindow
 
 IMG_PATH = str(Path(__file__).absolute().parent / 'img')
-AUTH_KEY = 'feba98ba-ad9c-4d93-81b6-2aa2ded8ed30:fx'
+AUTH_KEY = ''
 
 
 class MainWindow(QMainWindow):
