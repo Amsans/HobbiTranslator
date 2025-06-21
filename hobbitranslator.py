@@ -1,8 +1,8 @@
 import sys
 import json
 from pathlib import Path
-from PyQt5.QtCore import Qt, QSize, QSettings, QByteArray, QUrl, QJsonDocument
-from PyQt5.QtGui import QIcon, QPixmap, QFont, QPalette, QColor, QMovie
+from PyQt5.QtCore import Qt, QSize, QSettings, QByteArray, QUrl, QJsonDocument, QEvent
+from PyQt5.QtGui import QIcon, QPixmap, QFont, QPalette, QColor, QMovie, QCursor
 from PyQt5.QtWidgets import QApplication, QStyleFactory, QMainWindow, QWidget, QGridLayout, QHBoxLayout, QPushButton, QPlainTextEdit, QMessageBox, QComboBox, QLabel
 from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 
@@ -78,9 +78,22 @@ class MainWindow(QMainWindow):
     def createLanguageCb(self):
         self.languageCb = QComboBox()
         self.languageCb.setEnabled(False)
+        self.languageCb.setCursor(Qt.ForbiddenCursor)
+        self.languageCb.installEventFilter(self)
         self.languageCb.addItem('EN')
         self.languageCb.setMinimumHeight(38)
         return self.languageCb
+
+    def eventFilter(self, obj, event):
+        if obj == self.languageCb and event.type() in [QEvent.Enter, QEvent.HoverEnter]:
+            print("Hover detected on languageCb")  # Debug
+            if not self.languageCb.isEnabled():
+                QApplication.setOverrideCursor(QCursor(Qt.ForbiddenCursor))
+            return True
+        elif obj == self.languageCb and event.type() in [QEvent.Leave, QEvent.HoverLeave]:
+            QApplication.restoreOverrideCursor()
+            return True
+        return super().eventFilter(obj, event)
 
     def createClearBtn(self):
         self.clearBtn = QPushButton('АЧЫСЬЦІЦЬ')
@@ -241,6 +254,7 @@ if __name__ == '__main__':
     app.setStyleSheet('QPushButton {font-weight: bold}'
                       'QCheckBox {font-weight: bold}'
                       'QComboBox {font-weight: bold}'
+                      'QComboBox:disabled {cursor: not-allowed;color:grey}'
                       'QLabel {font-weight: bold}')
 
     palette = QPalette()
