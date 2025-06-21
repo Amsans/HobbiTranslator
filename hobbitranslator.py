@@ -1,11 +1,10 @@
 import sys
+import json
 from pathlib import Path
-
-import deepl
-from PyQt5.QtCore import Qt, QSize, QSettings, QByteArray
-from PyQt5.QtGui import QIcon, QPixmap, QFont
-from PyQt5.QtWidgets import QApplication, QStyleFactory, QMainWindow, QWidget, QGridLayout, QHBoxLayout, QPushButton, QPlainTextEdit, QMessageBox, \
-    QComboBox
+from PyQt5.QtCore import Qt, QSize, QSettings, QByteArray, QUrl, QJsonDocument
+from PyQt5.QtGui import QIcon, QPixmap, QFont, QPalette, QColor, QMovie
+from PyQt5.QtWidgets import QApplication, QStyleFactory, QMainWindow, QWidget, QGridLayout, QHBoxLayout, QPushButton, QPlainTextEdit, QMessageBox, QComboBox, QLabel
+from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 
 from settings_window import SettingsWindow
 
@@ -17,12 +16,16 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super(MainWindow, self).__init__()
         QApplication.setAttribute(Qt.ApplicationAttribute.AA_DisableWindowContextHelpButton)
+        self.worker_url = 'https://deepl-proxy.amra-team.workers.dev'
         self.settings = QSettings('AmraSoft', 'Hobbit Translator')
         self.settingsWindow = None
-        self.translator = deepl.Translator(AUTH_KEY)
         self.translatedResult = None
 
-        self.setWindowTitle("Перакладчык Хобіт: Туды і назад v1.1")
+        # Initialize QNetworkAccessManager
+        self.network_manager = QNetworkAccessManager(self)
+        self.network_manager.finished.connect(self.handle_network_reply)
+
+        self.setWindowTitle("Перакладчык Хобіт: Туды і назад v1.3")
         self.setWindowIcon(QIcon(QPixmap(IMG_PATH + '/house.png')))
         self.setMinimumWidth(800)
         self.setMinimumHeight(600)
@@ -114,31 +117,95 @@ class MainWindow(QMainWindow):
         self.settingsBtn.clicked.connect(self.openSettingDialog)
         return self.settingsBtn
 
+    def show_loading(self):
+        if not hasattr(self, 'loading_overlay'):
+            self.loading_overlay = QWidget(self.centralWidget())
+            self.loading_overlay.setStyleSheet("background-color: rgba(0, 0, 0, 128);")
+            self.loading_overlay.setGeometry(0, 0, self.centralWidget().width(), self.centralWidget().height())
+            self.loading_overlay.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+            self.loading_overlay.setWindowFlags(Qt.FramelessWindowHint)
+
+            self.spinner_label = QLabel(self.loading_overlay)
+            self.spinner = QMovie(IMG_PATH + "/spinner.gif")
+            self.spinner_label.setMovie(self.spinner)
+            self.spinner_label.setAlignment(Qt.AlignCenter)
+            self.spinner_label.setGeometry(0, 0, self.centralWidget().width(), self.centralWidget().height())
+            self.spinner.frameChanged.connect(lambda: print("Spinner frame changed"))  # Debug animation
+
+        self.loading_overlay.setGeometry(0, 0, self.centralWidget().width(), self.centralWidget().height())
+        self.loading_overlay.raise_()
+        self.loading_overlay.setVisible(True)
+        self.spinner.start()
+        print(f"Spinner started: {self.spinner.state() == QMovie.Running}")  # Debug
+        QApplication.processEvents()
+
+    def hide_loading(self):
+        if hasattr(self, 'loading_overlay'):
+            self.spinner.stop()
+            self.loading_overlay.setVisible(False)
+            print(f"Spinner stopped: {self.spinner.state() == QMovie.NotRunning}")  # Debug
+            QApplication.processEvents()
+
     def performTranslate(self):
+        text = self.sourceTextEdit.toPlainText()
+        if not text:
+            self.targetTextEdit.setPlainText("No text to translate")
+            return
+
+        self.show_loading()
         self.sourceTextEdit.setEnabled(False)
         self.targetTextEdit.setEnabled(False)
         self.translateBtn.setEnabled(False)
         self.copyBtn.setEnabled(False)
 
-        # Translate THERE
-        text = self.sourceTextEdit.toPlainText()
-        self.translatedResult = self.translator.translate_text(text=text, source_lang='RU', target_lang='EN-GB')
+        # Prepare async request
+        request = QNetworkRequest(QUrl(self.worker_url))
+        request.setHeader(QNetworkRequest.ContentTypeHeader, "application/json")
+        request.setRawHeader(b"Hobbit-Token", AUTH_KEY.encode('utf-8'))
+        data = QJsonDocument.fromJson(json.dumps({'text': text, 'target_lang': 'EN-GB'}).encode('utf-8'))
 
-        # Translate BACK AGAIN
-        result = self.translator.translate_text(text=self.translatedResult.text, source_lang='EN', target_lang='RU')
-        self.targetTextEdit.setPlainText(result.text)
+        # Send async request
+        self.current_reply = self.network_manager.post(request, data.toJson())
 
-        self.sourceTextEdit.setEnabled(True)
-        self.targetTextEdit.setEnabled(True)
-        self.translateBtn.setEnabled(True)
-        self.copyBtn.setEnabled(True)
-        self.setEnabled(True)
+    def handle_network_reply(self, reply):
+        try:
+            if reply.error() != QNetworkReply.NoError:
+                error_msg = f"Error: {reply.errorString()}"
+                if reply.attribute(QNetworkRequest.HttpStatusCodeAttribute) == 400:
+                    error_msg = "Translation failed: Invalid request to DeepL"
+                    try:
+                        error_details = json.loads(reply.readAll().data().decode('utf-8'))
+                        error_msg += f" - {error_details.get('message', 'No details provided')}"
+                    except ValueError:
+                        pass
+                self.targetTextEdit.setPlainText(error_msg)
+                print(error_msg)
+            else:
+                response_data = reply.readAll().data().decode('utf-8')
+                data = json.loads(response_data)
+                self.targetTextEdit.setPlainText(data['back_translation'])
+                self.translatedResult = data['first_translation']
+                print(f"First translation: {data['first_translation']}")
+                print(f"Back translation: {data['back_translation']}")
+
+        except Exception as e:
+            error_msg = f"Error processing response: {e}"
+            self.targetTextEdit.setPlainText(error_msg)
+            print(error_msg)
+
+        finally:
+            self.sourceTextEdit.setEnabled(True)
+            self.targetTextEdit.setEnabled(True)
+            self.translateBtn.setEnabled(True)
+            self.copyBtn.setEnabled(True)
+            self.hide_loading()
+            reply.deleteLater()
 
     def performCopy(self):
         clipboard = QApplication.clipboard()
         if self.translatedResult:
             clipboard.clear(mode=clipboard.Clipboard)
-            clipboard.setText(self.translatedResult.text, mode=clipboard.Clipboard)
+            clipboard.setText(self.translatedResult, mode=clipboard.Clipboard)
 
     def openSettingDialog(self):
         self.settingsWindow = SettingsWindow(self.settings)
@@ -181,6 +248,22 @@ if __name__ == '__main__':
                       'QCheckBox {font-weight: bold}'
                       'QComboBox {font-weight: bold}'
                       'QLabel {font-weight: bold}')
+
+    palette = QPalette()
+    palette.setColor(QPalette.Window, QColor(53, 53, 53))
+    palette.setColor(QPalette.WindowText, Qt.white)
+    palette.setColor(QPalette.Base, QColor(25, 25, 25))
+    palette.setColor(QPalette.AlternateBase, QColor(53, 53, 53))
+    palette.setColor(QPalette.ToolTipBase, Qt.black)
+    palette.setColor(QPalette.ToolTipText, Qt.white)
+    palette.setColor(QPalette.Text, Qt.white)
+    palette.setColor(QPalette.Button, QColor(53, 53, 53))
+    palette.setColor(QPalette.ButtonText, Qt.white)
+    palette.setColor(QPalette.BrightText, Qt.red)
+    palette.setColor(QPalette.Link, QColor(42, 130, 218))
+    palette.setColor(QPalette.Highlight, QColor(42, 130, 218))
+    palette.setColor(QPalette.HighlightedText, Qt.black)
+    app.setPalette(palette)
 
     window = MainWindow()
     window.show()
