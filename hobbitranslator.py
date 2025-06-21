@@ -86,7 +86,6 @@ class MainWindow(QMainWindow):
 
     def eventFilter(self, obj, event):
         if obj == self.languageCb and event.type() in [QEvent.Enter, QEvent.HoverEnter]:
-            print("Hover detected on languageCb")  # Debug
             if not self.languageCb.isEnabled():
                 QApplication.setOverrideCursor(QCursor(Qt.ForbiddenCursor))
             return True
