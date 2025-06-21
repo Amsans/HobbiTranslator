@@ -130,26 +130,22 @@ class MainWindow(QMainWindow):
             self.spinner_label.setMovie(self.spinner)
             self.spinner_label.setAlignment(Qt.AlignCenter)
             self.spinner_label.setGeometry(0, 0, self.centralWidget().width(), self.centralWidget().height())
-            self.spinner.frameChanged.connect(lambda: print("Spinner frame changed"))  # Debug animation
 
         self.loading_overlay.setGeometry(0, 0, self.centralWidget().width(), self.centralWidget().height())
         self.loading_overlay.raise_()
         self.loading_overlay.setVisible(True)
         self.spinner.start()
-        print(f"Spinner started: {self.spinner.state() == QMovie.Running}")  # Debug
         QApplication.processEvents()
 
     def hide_loading(self):
         if hasattr(self, 'loading_overlay'):
             self.spinner.stop()
             self.loading_overlay.setVisible(False)
-            print(f"Spinner stopped: {self.spinner.state() == QMovie.NotRunning}")  # Debug
             QApplication.processEvents()
 
     def performTranslate(self):
         text = self.sourceTextEdit.toPlainText()
         if not text:
-            self.targetTextEdit.setPlainText("No text to translate")
             return
 
         self.show_loading()
@@ -165,7 +161,7 @@ class MainWindow(QMainWindow):
         data = QJsonDocument.fromJson(json.dumps({'text': text, 'target_lang': 'EN-GB'}).encode('utf-8'))
 
         # Send async request
-        self.current_reply = self.network_manager.post(request, data.toJson())
+        self.network_manager.post(request, data.toJson())
 
     def handle_network_reply(self, reply):
         try:
@@ -185,8 +181,6 @@ class MainWindow(QMainWindow):
                 data = json.loads(response_data)
                 self.targetTextEdit.setPlainText(data['back_translation'])
                 self.translatedResult = data['first_translation']
-                print(f"First translation: {data['first_translation']}")
-                print(f"Back translation: {data['back_translation']}")
 
         except Exception as e:
             error_msg = f"Error processing response: {e}"
